@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Oxy's Hold'em</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@700&family=Outfit:wght@700;900&display=swap" rel="stylesheet">
+<script src="/socket.io/socket.io.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0a;--surface:#141414;--surface2:#1e1e1e;--border:#2a2a2a;--border2:#3a3a3a;
+  --text:#f0f0f0;--text2:#888;--text3:#555;
+  --fold:#c0392b;--fold-bg:rgba(192,57,43,0.15);
+  --call:#27ae60;--call-bg:rgba(39,174,96,0.15);
+  --raise:#e67e22;--raise-bg:rgba(230,126,34,0.15);
+  --allin:#8e44ad;--allin-bg:rgba(142,68,173,0.15);
+  --check:#2980b9;--check-bg:rgba(41,128,185,0.15);
+  --gold:#c9a84c;
+}
+html,body{min-height:100vh;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-size:15px;-webkit-font-smoothing:antialiased}
+
+/* LOBBY */
+.screen{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.5rem}
+.logo{font-family:'Outfit',sans-serif;font-weight:900;font-size:2.7rem;color:#fff;letter-spacing:-1.5px;margin-bottom:4px}
+.logo span{color:var(--gold)}
+.sub{font-size:12px;color:var(--text3);margin-bottom:2rem;letter-spacing:1.5px;text-transform:uppercase}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:1.75rem;width:100%;max-width:390px}
+.panel h2{font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:1.5rem}
+.field{margin-bottom:1rem}
+.field label{display:block;font-size:11px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+.field input,.field select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:11px 14px;color:var(--text);font-size:15px;outline:none;font-family:inherit;transition:border-color .2s;appearance:none;-webkit-appearance:none}
+.field input:focus,.field select:focus{border-color:var(--border2)}
+.field input::placeholder{color:var(--text3)}
+.btn-primary{width:100%;background:#fff;color:#0a0a0a;border:none;border-radius:8px;padding:13px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;transition:opacity .15s,transform .1s;margin-top:.25rem}
+.btn-primary:hover{opacity:.88}
+.btn-primary:active{transform:scale(.98)}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed}
+.btn-secondary{width:100%;background:transparent;color:var(--text2);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:14px;font-weight:500;cursor:pointer;font-family:inherit;transition:border-color .2s,color .2s;margin-top:.75rem}
+.btn-secondary:hover{border-color:var(--border2);color:var(--text)}
+.divider{text-align:center;font-size:12px;color:var(--text3);margin:.85rem 0;position:relative}
+.divider::before,.divider::after{content:'';position:absolute;top:50%;width:40%;height:1px;background:var(--border)}
+.divider::before{left:0}.divider::after{right:0}
+
+/* ROOM */
+.room-code-box{font-family:'Courier New',monospace;font-size:2rem;letter-spacing:6px;text-align:center;color:var(--gold);padding:16px;border:1px solid rgba(201,168,76,.3);border-radius:12px;cursor:pointer;background:rgba(201,168,76,.05);transition:background .2s;margin-bottom:6px;font-weight:700}
+.room-code-box:hover{background:rgba(201,168,76,.1)}
+.copy-hint{font-size:11px;color:var(--text3);text-align:center;margin-bottom:1.25rem}
+.player-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--call);flex-shrink:0}
+.dot.w{background:var(--border2)}
+.p-name{font-size:14px;color:var(--text);flex:1}
+.p-badge{font-size:11px;color:var(--gold);background:rgba(201,168,76,.1);padding:2px 8px;border-radius:20px;border:1px solid rgba(201,168,76,.2)}
+
+/* GAME */
+.table-wrap{min-height:100vh;display:flex;flex-direction:column;background:var(--bg)}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--surface);flex-wrap:wrap;gap:8px}
+.pot-display{font-size:18px;font-weight:700;color:var(--gold)}
+.pot-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-right:4px}
+.phase-badge{font-size:11px;color:var(--text2);background:var(--surface2);padding:4px 10px;border-radius:20px;border:1px solid var(--border)}
+.room-label{font-size:11px;font-family:monospace;color:var(--text3)}
+.table-area{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1rem;gap:.85rem}
+.opponents-ring{display:flex;flex-wrap:nowrap;justify-content:center;gap:6px;width:100%;overflow-x:auto;padding:10px 4px 4px;scrollbar-width:none}.opponents-ring::-webkit-scrollbar{display:none}
+
+/* Opponent seats */
+.opp-seat{background:var(--surface);border:2px solid transparent;border-radius:12px;padding:8px 10px;min-width:88px;max-width:110px;flex-shrink:0;text-align:center;transition:border-color .3s,box-shadow .3s,transform .2s,opacity .3s;position:relative;z-index:2}
+.opp-seat.active{border-width:2.5px;transform:translateY(-3px)}
+.opp-seat.folded{opacity:.3}
+.opp-name{font-size:10px;color:var(--text3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px}
+.p-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle}
+.opp-stack{font-size:14px;font-weight:600;color:var(--text)}
+.opp-bet{font-size:11px;color:var(--gold);margin-top:2px}
+.opp-status{font-size:10px;margin-top:3px;min-height:14px}
+.opp-cards-row{display:flex;gap:3px;justify-content:center;margin-top:6px}
+.card-back-sm{width:22px;height:32px;background:var(--surface2);border-radius:4px;border:1px solid var(--border2)}
+
+/* Community cards */
+.community-row{display:flex;gap:14px;justify-content:center;align-items:center;perspective:900px;transform-style:preserve-3d}
+.comm-card{width:76px;height:110px;border-radius:11px;border:1px solid var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:700;background:var(--surface2);transform-style:preserve-3d;will-change:transform,opacity;transition:box-shadow .3s}
+.comm-card.empty{opacity:.25}
+.comm-card.dealt{background:#fff;border-color:rgba(0,0,0,.15);box-shadow:0 8px 32px rgba(0,0,0,.7),0 2px 8px rgba(0,0,0,.4)}
+.comm-card.dealing{animation:dealSlide .42s cubic-bezier(.22,.68,0,1.15) both,dealFlip .52s cubic-bezier(.25,0,.2,1.1) both}
+.comm-card .cr{font-size:26px;line-height:1}
+.comm-card .cs{font-size:20px;line-height:1.1}
+.comm-card.red{color:#c0392b}
+.comm-card.blk{color:#111}
+@keyframes dealSlide{
+  0%{transform:translateY(-70px) translateX(-30px) scale(.72) rotate(-8deg);opacity:0;box-shadow:none}
+  45%{opacity:1}
+  75%{transform:translateY(4px) translateX(2px) scale(1.04) rotate(1deg)}
+  90%{transform:translateY(-2px) translateX(-1px) scale(.98) rotate(0deg)}
+  100%{transform:translateY(0) translateX(0) scale(1) rotate(0deg);opacity:1}
+}
+@keyframes dealFlip{
+  0%{transform:rotateY(-110deg) scale(.85)}
+  50%{transform:rotateY(12deg) scale(1.05)}
+  75%{transform:rotateY(-4deg) scale(1.01)}
+  90%{transform:rotateY(2deg) scale(1)}
+  100%{transform:rotateY(0deg) scale(1)}
+}
+
+/* My section */
+.my-section{background:var(--surface);border-top:1px solid var(--border);padding:1.25rem 1rem 1.1rem}
+.my-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.my-name-text{font-size:13px;font-weight:600;color:var(--gold)}
+.my-stack-text{font-size:13px;color:var(--text2)}
+.my-cards-row{display:flex;gap:12px;margin-bottom:12px}
+
+/* Hole cards */
+.hole-card{width:70px;height:100px;border-radius:10px;position:relative;cursor:pointer;perspective:600px}
+.hole-card .cf,.hole-card .cb{position:absolute;inset:0;border-radius:10px;backface-visibility:hidden;-webkit-backface-visibility:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:transform .5s ease;font-weight:700;border:1px solid rgba(0,0,0,.15);box-shadow:0 6px 24px rgba(0,0,0,.55)}
+.hole-card .cf{background:#fff;transform:rotateY(0deg)}
+.hole-card .cb{background:var(--surface2);border-color:var(--border2);transform:rotateY(-180deg);font-size:2.2rem;border:1px solid var(--border2)}
+.hole-card.flipped .cf{transform:rotateY(180deg)}
+.hole-card.flipped .cb{transform:rotateY(0deg)}
+.hole-card .hr{font-size:26px;line-height:1}
+.hole-card .hs{font-size:20px}
+.cf.red{color:#c0392b}
+.cf.blk{color:#111}
+.flip-hint{font-size:10px;color:var(--text3);margin-bottom:10px;margin-top:8px}
+.hide-cards-btn{width:60px;height:100px;border-radius:10px;font-size:13px;font-weight:600;line-height:1.5;padding:0;display:flex;align-items:center;justify-content:center;text-align:center}
+.my-bet-info{font-size:12px;color:var(--gold);margin-bottom:8px}
+
+/* Action buttons */
+.actions-row{display:flex;gap:7px;flex-wrap:wrap}
+.act{border-radius:10px;padding:12px 8px;font-size:13px;font-weight:600;cursor:pointer;border:1.5px solid;flex:1;min-width:68px;font-family:inherit;transition:transform .1s,opacity .15s;letter-spacing:.2px;text-align:center}
+.act:active{transform:scale(.95)}
+.act:disabled{opacity:.25;cursor:not-allowed;pointer-events:none}
+.a-fold{background:var(--fold-bg);border-color:var(--fold);color:var(--fold)}
+.a-fold:hover{background:rgba(192,57,43,.28)}
+.a-call{background:var(--call-bg);border-color:var(--call);color:var(--call)}
+.a-call:hover{background:rgba(39,174,96,.28)}
+.a-check{background:var(--check-bg);border-color:var(--check);color:var(--check)}
+.a-check:hover{background:rgba(41,128,185,.28)}
+.a-raise{background:var(--raise-bg);border-color:var(--raise);color:var(--raise)}
+.a-raise:hover{background:rgba(230,126,34,.28)}
+.a-allin{background:var(--allin-bg);border-color:var(--allin);color:var(--allin)}
+.a-allin:hover{background:rgba(142,68,173,.28)}
+.a-deal{background:rgba(201,168,76,.1);border-color:var(--gold);color:var(--gold)}
+.a-deal:hover{background:rgba(201,168,76,.22)}
+
+/* Raise panel */
+.raise-panel{background:var(--surface2);border-radius:10px;padding:12px;margin-bottom:10px;border:1px solid var(--border)}
+.raise-panel label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:6px}
+.raise-panel input[type=range]{width:100%;margin-bottom:8px;accent-color:var(--raise);cursor:pointer}
+.raise-amount{font-size:20px;font-weight:700;color:var(--raise);text-align:center;margin-bottom:10px}
+
+/* Dealer panel */
+.dealer-panel{background:rgba(201,168,76,.05);border:1px solid rgba(201,168,76,.2);border-radius:10px;padding:12px;margin-bottom:10px}
+.dealer-panel h4{font-size:11px;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px}
+.deal-progress{display:flex;gap:6px;margin-bottom:10px}
+.deal-step{flex:1;height:3px;border-radius:2px;background:var(--border)}
+.deal-step.done{background:var(--gold)}
+.deal-step.active{background:rgba(201,168,76,.45)}
+
+/* Move feed */
+.move-feed{width:100%;max-width:740px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 16px;margin-bottom:.25rem}
+.move-feed-title{font-size:11px;color:var(--gold);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;opacity:.8;font-weight:600}
+.move-feed-list{display:flex;flex-direction:column;gap:3px;max-height:108px;overflow-y:auto}
+.move-feed-list::-webkit-scrollbar{width:4px}
+.move-feed-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.move-line{font-size:14px;color:var(--text2);line-height:1.45;animation:fadeInLine .3s ease both}
+.move-line.fresh{color:var(--text)}
+.move-line .mn{font-weight:700}
+@keyframes fadeInLine{0%{opacity:0;transform:translateY(-4px)}100%{opacity:1;transform:translateY(0)}}
+
+.action-log{font-size:11px;color:var(--text3);text-align:center;min-height:28px;overflow:hidden;line-height:1.7;padding:0 .5rem}
+
+/* Result overlay */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;z-index:200;backdrop-filter:blur(5px)}
+.result-panel{background:var(--surface);border:1px solid var(--border2);border-radius:20px;padding:2rem;text-align:center;max-width:320px;width:90%;animation:popIn .4s cubic-bezier(.34,1.56,.64,1) both}
+@keyframes popIn{0%{transform:scale(.75);opacity:0}100%{transform:scale(1);opacity:1}}
+.trophy{font-size:3.2rem;margin-bottom:.5rem}
+.result-panel h2{font-family:'Playfair Display',serif;font-size:1.6rem;color:#fff;margin-bottom:.3rem}
+.winner-name{font-size:1.1rem;color:var(--gold);font-weight:600;margin-bottom:.2rem}
+.hand-label{font-size:13px;color:var(--text2);margin-bottom:.4rem}
+.win-amount{font-size:2rem;font-weight:700;color:var(--call);margin-bottom:1.5rem}
+
+/* Rules / hand-rankings modal */
+.rules-overlay{position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:300;display:flex;align-items:flex-start;justify-content:center;padding:1rem;overflow-y:auto;backdrop-filter:blur(5px)}
+.rules-panel{background:var(--surface);border:1px solid var(--border2);border-radius:16px;padding:1.75rem;max-width:520px;width:100%;margin:auto}
+.rules-panel h2{font-family:'Playfair Display',serif;font-size:1.5rem;color:#fff;margin-bottom:1.25rem}
+.rs{margin-bottom:1.25rem}
+.rs h3{font-size:12px;font-weight:600;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.5rem}
+.rs p,.rs li{font-size:13px;color:var(--text2);line-height:1.75}
+.rs ul{padding-left:1.2rem}
+.rs li{margin-bottom:.3rem}
+.hand-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:.5rem}
+.hand-item{background:var(--surface2);border-radius:8px;padding:8px 10px;border:1px solid var(--border)}
+.hand-item .rn{font-size:10px;color:var(--text3);margin-bottom:1px}
+.hand-item .hn{font-size:13px;font-weight:600;color:var(--text)}
+.hand-item .hd{font-size:11px;color:var(--text2)}
+.rank-title-row{text-align:center;margin-bottom:1.5rem}
+.rank-title{font-family:'Playfair Display',serif;font-size:1.7rem;color:#fff;letter-spacing:-.5px}
+.rank-title b{font-weight:700}
+.rank-title-divider{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:8px}
+.rank-title-divider .line{height:2px;width:60px;background:var(--call)}
+.rank-title-divider .suits{font-size:13px;letter-spacing:4px}
+.rank-row{display:flex;align-items:center;gap:14px;padding:13px 2px;border-bottom:1px solid var(--border)}
+.rank-row:last-child{border-bottom:none}
+.rank-chip{width:28px;height:28px;border-radius:50%;border:2px solid var(--call);color:var(--call);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;font-family:'Inter',sans-serif}
+.rank-cards{display:flex;gap:3px;flex-shrink:0}
+.rank-card{width:30px;height:43px;background:#fff;border-radius:5px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:700;line-height:1;box-shadow:0 2px 6px rgba(0,0,0,.4)}
+.rank-card.dim{background:var(--surface2);color:var(--text3)!important;border:1px solid var(--border2)}
+.rank-card .rc-r{font-size:12px}.rank-card .rc-s{font-size:11px}
+.rank-card.red{color:var(--fold)}.rank-card.blk{color:#111}
+.rank-info{flex:1;min-width:0}
+.rank-info h4{font-family:'Playfair Display',serif;font-size:14px;color:var(--call);margin-bottom:2px}
+.rank-info p{font-size:11.5px;color:var(--text2);line-height:1.3}
+.rank-footer{text-align:center;margin-top:1.25rem;font-size:11px;color:var(--text3);letter-spacing:.5px}
+
+/* Tags */
+.tag{display:inline-block;font-size:10px;padding:1px 6px;border-radius:20px;margin-left:3px;vertical-align:middle}
+.tag-d{background:rgba(201,168,76,.15);color:var(--gold);border:1px solid rgba(201,168,76,.3)}
+.tag-sb{background:rgba(41,128,185,.15);color:#3498db;border:1px solid rgba(52,152,219,.3)}
+.tag-bb{background:rgba(39,174,96,.15);color:var(--call);border:1px solid rgba(39,174,96,.3)}
+
+.icon-btn{background:transparent;border:1px solid var(--border);border-radius:8px;padding:6px 12px;color:var(--text2);font-size:12px;cursor:pointer;font-family:inherit;transition:border-color .2s,color .2s;white-space:nowrap}
+.icon-btn:hover{border-color:var(--border2);color:var(--text)}
+.waiting-text{font-size:13px;color:var(--text3);text-align:center;padding:.6rem 0}
+
+/* Error toast */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#c0392b;color:#fff;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:600;z-index:999;animation:toastIn .3s ease;pointer-events:none}
+@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(12px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+
+/* Connection indicator */
+.conn-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px;vertical-align:middle}
+.conn-dot.on{background:#27ae60}
+.conn-dot.off{background:#c0392b}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// ════════════════════════════════════════════════
+// SOCKET SETUP
+// ════════════════════════════════════════════════
+const socket = io();
+
+let connected = false;
+socket.on('connect', () => { connected = true; updateConnDot(); });
+socket.on('disconnect', () => { connected = false; updateConnDot(); });
+
+function updateConnDot() {
+  const d = document.getElementById('conn-dot');
+  if (d) { d.className = 'conn-dot ' + (connected ? 'on' : 'off'); }
+}
+
+// ════════════════════════════════════════════════
+// CONSTANTS
+// ════════════════════════════════════════════════
+const SUITS = ['♠','♥','♦','♣'];
+const RANKS = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+const RANK_VAL = {2:2,3:3,4:4,5:5,6:6,7:7,8:8,9:9,10:10,J:11,Q:12,K:13,A:14};
+const RED = new Set(['♥','♦']);
+const PHASE_LABELS = {preflop:'Pre-Flop',flop:'Flop',turn:'Turn',river:'River',showdown:'Showdown'};
+const PLAYER_COLORS = ['#c0392b','#27ae60','#e67e22','#8e44ad','#2980b9','#c9a84c','#16a085','#7f5539'];
+const DEAL_STEPS = ['Pre-Flop','Flop','Turn','River'];
+const HAND_RANKINGS = [
+  {n:1,name:'Royal Flush',desc:'A-K-Q-J-10, all in the same suit.',cards:[['A','♥'],['K','♥'],['Q','♥'],['J','♥'],['10','♥']]},
+  {n:2,name:'Straight Flush',desc:'Five consecutive cards in the same suit.',cards:[['6','♠'],['7','♠'],['8','♠'],['9','♠'],['10','♠']]},
+  {n:3,name:'Four of a Kind',desc:'Four cards of the same rank.',cards:[['10','♥'],['10','♠'],['10','♦'],['10','♣'],['A','♦'],true]},
+  {n:4,name:'Full House',desc:'Three cards of the same rank and two of another.',cards:[['A','♣'],['A','♦'],['A','♠'],['K','♦'],['K','♣']]},
+  {n:5,name:'Flush',desc:'Five cards of the same suit, in any order.',cards:[['A','♠'],['J','♠'],['7','♠'],['5','♠'],['2','♠']]},
+  {n:6,name:'Straight',desc:'Five consecutive cards of different suits.',cards:[['4','♠'],['5','♥'],['6','♠'],['7','♥'],['8','♠']]},
+  {n:7,name:'Three of a Kind',desc:'Three cards of the same rank.',cards:[['8','♥'],['8','♠'],['8','♦'],['A','♠'],['4','♥'],true]},
+  {n:8,name:'Two Pair',desc:'Two cards of one rank and two of another.',cards:[['A','♠'],['A','♥'],['K','♠'],['K','♥'],['2','♠'],true]},
+  {n:9,name:'One Pair',desc:'Two cards of the same rank.',cards:[['J','♥'],['J','♠'],['5','♠'],['7','♠'],['2','♥'],true]},
+  {n:10,name:'High Card',desc:'Highest card when no other combination is possible.',cards:[['Q','♠'],['J','♥'],['6','♠'],['4','♥'],['3','♠'],true]},
+];
+
+// ════════════════════════════════════════════════
+// CLIENT STATE (populated by server broadcasts)
+// ════════════════════════════════════════════════
+let cardsHidden = false;
+let _lastChatLen = 0;
+let showTableTalk = true;
+
+// Local UI state
+let L = {
+  screen: 'lobby',       // 'lobby' | 'room' | 'game'
+  myName: '',
+  roomCode: '',
+  isHost: false,
+  gameMode: 'online',
+  showRaise: false,
+  raiseAmount: 0,
+};
+
+// Server-synced game state
+let G = null;   // set on 'state' event
+let roomPlayers = []; // set on 'room_update' event
+
+// ════════════════════════════════════════════════
+// SOCKET → CLIENT EVENTS
+// ════════════════════════════════════════════════
+socket.on('room_created', ({ roomCode, hostName }) => {
+  L.roomCode = roomCode;
+  L.isHost = true;
+  L.screen = 'room';
+  render();
+});
+
+socket.on('room_joined', ({ roomCode, hostName }) => {
+  L.roomCode = roomCode;
+  L.isHost = false;
+  L.screen = 'room';
+  render();
+});
+
+socket.on('room_update', ({ players, roomCode, hostName }) => {
+  roomPlayers = players;
+  if (L.screen === 'room') render();
+});
+
+socket.on('state', (state) => {
+  G = state;
+  // Restore local UI overlays
+  G.showRaise = L.showRaise;
+  G.raiseAmount = L.raiseAmount;
+  if (L.screen !== 'game') { L.screen = 'game'; }
+  render();
+});
+
+socket.on('error', (msg) => {
+  showToast(msg);
+});
+
+socket.on('room_closed', (msg) => {
+  showToast(msg || 'Room closed');
+  G = null; roomPlayers = [];
+  L.screen = 'lobby';
+  render();
+});
+
+// ════════════════════════════════════════════════
+// HELPERS
+// ════════════════════════════════════════════════
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast'; t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+function colorForName(name) {
+  if (!G) return PLAYER_COLORS[0];
+  const p = G.players && G.players.find(p => p.name === name);
+  if (p && p.color) return p.color;
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return PLAYER_COLORS[hash % PLAYER_COLORS.length];
+}
+
+function shadeColor(hex, percent) {
+  const h = hex.replace('#', '');
+  let r = parseInt(h.substring(0,2),16), g = parseInt(h.substring(2,4),16), b = parseInt(h.substring(4,6),16);
+  r = Math.max(0,Math.min(255,Math.round(r+(percent<0?r:255-r)*percent)));
+  g = Math.max(0,Math.min(255,Math.round(g+(percent<0?g:255-g)*percent)));
+  b = Math.max(0,Math.min(255,Math.round(b+(percent<0?b:255-b)*percent)));
+  return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+}
+
+let _chipIdSeq = 0;
+function chipSvg(amount, size=28, playerName=null) {
+  let c1,c2,cs;
+  if (playerName) { const pc=colorForName(playerName); c1=pc; c2=shadeColor(pc,-0.3); cs=shadeColor(pc,0.35); }
+  else { c1='#c9a84c'; c2=shadeColor('#c9a84c',-0.3); cs=shadeColor('#c9a84c',0.35); }
+  const uid = (_chipIdSeq++)+'_'+Math.random().toString(36).slice(2,7);
+  const r = size/2, cx = r, cy = r;
+  const maxStack = (G&&G.startStack)||1000;
+  const stackCount = Math.max(1,Math.min(4,Math.ceil((amount/maxStack)*4)));
+  const stackOffset = 3;
+  const totalH = size+(stackCount-1)*stackOffset;
+  const svgs = [];
+  for (let i = stackCount-1; i >= 0; i--) {
+    const dy = i*stackOffset;
+    svgs.push(`<ellipse cx="${cx}" cy="${cy+dy+4}" rx="${r-2}" ry="4" fill="${c2}" opacity="0.7"/>
+      <circle cx="${cx}" cy="${cy+dy}" r="${r-1}" fill="url(#cg${uid}_${i})"/>
+      <circle cx="${cx}" cy="${cy+dy}" r="${r-1}" fill="none" stroke="${cs}" stroke-width="2" stroke-dasharray="4 3"/>
+      <circle cx="${cx}" cy="${cy+dy}" r="${r-4}" fill="none" stroke="${cs}" stroke-width="1.5" opacity="0.6"/>`);
+  }
+  return `<svg width="${size}" height="${totalH+4}" viewBox="0 0 ${size} ${totalH+4}" xmlns="http://www.w3.org/2000/svg" style="display:inline-block;vertical-align:middle;flex-shrink:0">
+    <defs>${Array.from({length:stackCount},(_,i)=>`<radialGradient id="cg${uid}_${i}" cx="38%" cy="35%" r="65%"><stop offset="0%" stop-color="${c1}"/><stop offset="100%" stop-color="${c2}"/></radialGradient>`).join('')}</defs>
+    ${svgs.join('')}</svg>`;
+}
+
+// ════════════════════════════════════════════════
+// RENDER
+// ════════════════════════════════════════════════
+function render() {
+  document.getElementById('app').innerHTML =
+    L.screen === 'lobby' ? renderLobby() :
+    L.screen === 'room'  ? renderRoom() :
+    renderGame();
+  updateConnDot();
+  if (L.screen === 'game') updateChatFeed();
+}
+
+// ── LOBBY ──
+function renderLobby() {
+  const mode = L.gameMode || 'online';
+  return `<div class="screen">
+    <div class="logo">Oxy's <span>Hold'em</span></div>
+    <div class="sub">Texas Hold'em · Up to 8 players</div>
+    <div class="panel">
+      <h2>New Table</h2>
+      <div class="field">
+        <label>Your name</label>
+        <input id="i-name" placeholder="Enter your name" maxlength="14" value="${L.myName||''}"/>
+      </div>
+      <div class="field">
+        <label>Game mode</label>
+        <div style="display:flex;gap:8px;margin-top:2px">
+          <button onclick="L.gameMode='bots';render()" style="flex:1;padding:11px 8px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s;border:2px solid ${mode==='bots'?'#fff':'#2a2a2a'};background:${mode==='bots'?'#fff':'transparent'};color:${mode==='bots'?'#0a0a0a':'#888'}">🤖 vs Bots</button>
+          <button onclick="L.gameMode='online';render()" style="flex:1;padding:11px 8px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s;border:2px solid ${mode==='online'?'#fff':'#2a2a2a'};background:${mode==='online'?'#fff':'transparent'};color:${mode==='online'?'#0a0a0a':'#888'}">🌐 Online</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Starting chips</label>
+        <select id="i-stack">
+          <option value="20">$20 — Micro</option>
+          <option value="500">$500 — Quick game</option>
+          <option value="1000" selected>$1,000 — Standard</option>
+          <option value="2000">$2,000 — Deep stack</option>
+          <option value="5000">$5,000 — High roller</option>
+          <option value="10000">$10,000 — Whale</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Blinds (Small / Big)</label>
+        <select id="i-blinds">
+          <option value="2/4">$2 / $4 — Micro</option>
+          <option value="10/20">$10 / $20</option>
+          <option value="25/50" selected>$25 / $50</option>
+          <option value="50/100">$50 / $100</option>
+          <option value="100/200">$100 / $200</option>
+          <option value="200/400">$200 / $400</option>
+          <option value="500/1000">$500 / $1,000</option>
+        </select>
+      </div>
+      ${mode==='bots'?`
+      <div class="field">
+        <label>Number of bots</label>
+        <select id="i-botcount">
+          ${[1,2,3,4,5,6,7].map(n=>`<option value="${n}" ${n===4?'selected':''}>${n} bot${n>1?'s':''}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field">
+        <label>Bot difficulty</label>
+        <select id="i-botdiff">
+          <option value="easy">Easy — loose, rarely bluffs</option>
+          <option value="medium" selected>Medium — balanced</option>
+          <option value="hard">Hard — sharp, bluffs often</option>
+        </select>
+      </div>`:''}
+      <button class="btn-primary" onclick="createRoom()">${mode==='bots'?'Play vs Bots':'Create Online Table'}</button>
+      ${mode==='online'?`<div class="divider">or join existing</div>
+      <div class="field">
+        <label>Room code</label>
+        <input id="i-room" placeholder="e.g. POKER42" style="text-transform:uppercase;letter-spacing:3px" maxlength="8"/>
+      </div>
+      <button class="btn-secondary" onclick="joinRoom()">Join table</button>`:''}
+    </div>
+    <div style="margin-top:1rem;display:flex;gap:8px">
+      <button class="icon-btn" onclick="renderRulesModal()">? Rules</button>
+      <span style="display:flex;align-items:center;font-size:11px;color:var(--text3)">
+        <span id="conn-dot" class="conn-dot ${connected?'on':'off'}"></span>${connected?'Connected':'Connecting…'}
+      </span>
+    </div>
+  </div>`;
+}
+
+// ── ROOM ──
+function renderRoom() {
+  const players = roomPlayers.length ? roomPlayers : (G ? G.players : []);
+  const rows = players.map((p,i) => `
+    <div class="player-row">
+      <div class="dot ${i===0?'':'w'}" style="${p.color?`background:${p.color}`:''}"></div>
+      <span class="p-name">${p.name}${p.name===L.myName?' (you)':''}${p.isBot?' 🤖':''}</span>
+      ${i===0?'<span class="p-badge">Host · Dealer</span>':''}
+    </div>`).join('');
+
+  return `<div class="screen">
+    <div class="logo">Oxy's <span>Hold'em</span></div>
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+        <h2 style="margin-bottom:0">Waiting for players</h2>
+        <button onclick="exitToLobby()" style="background:transparent;border:1px solid var(--border);border-radius:8px;width:32px;height:32px;color:var(--text2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;font-family:inherit">✕</button>
+      </div>
+      <div class="room-code-box" onclick="copyCode()">${L.roomCode}</div>
+      <p class="copy-hint">tap to copy · share with friends</p>
+      <div style="margin-bottom:1.25rem">${rows}</div>
+      ${L.isHost&&L.gameMode==='online'
+        ? players.length<8
+          ? `<button class="btn-secondary" onclick="addBot()" style="margin-top:0;margin-bottom:.75rem">🤖 Add bot</button>`
+          : `<p class="waiting-text">Table is full (8 players)</p>`
+        : ''}
+      ${L.isHost&&players.length>=2
+        ? `<button class="btn-primary" onclick="startGame()">Start game · ${players.length} players</button>`
+        : ''}
+      ${L.isHost&&players.length<2
+        ? `<p class="waiting-text">Need at least 2 players to start</p>`
+        : ''}
+      ${!L.isHost?`<p class="waiting-text">Waiting for host to start…</p>`:''}
+      <button class="btn-secondary" onclick="renderRulesModal()" style="margin-top:.75rem">? Rules</button>
+    </div>
+  </div>`;
+}
+
+// ── GAME ──
+function renderGame() {
+  if (!G) return `<div class="screen"><p style="color:var(--text2)">Connecting…</p></div>`;
+
+  const me = G.players.find(p => p.name === G.myName);
+  const myIdx = G.players.indexOf(me);
+  const maxBet = Math.max(...G.players.map(p => p.bet || 0));
+  const toCall = maxBet - (me?.bet || 0);
+  const isMyTurn = !G.result && !G.hostWaitingToDeal && G.currentTurn === myIdx && me && !me.folded;
+  const phaseLabel = PHASE_LABELS[G.phase] || G.phase;
+  const nextPhaseName = G.dealPhaseIdx===0?'Flop':G.dealPhaseIdx===1?'Turn':G.dealPhaseIdx===2?'River':'Showdown';
+  const sbIdx = (G.dealerIdx+1) % G.players.length;
+  const bbIdx = (G.dealerIdx+2) % G.players.length;
+  const isHost = L.isHost;
+
+  // Opponent seats
+  const oppHtml = G.players.filter(p => p.name !== G.myName).map(p => {
+    const idx = G.players.indexOf(p);
+    const isActive = !G.result && !G.hostWaitingToDeal && G.currentTurn === idx && !p.folded;
+    const showCards = (G.result || G.allInReveal) && !p.folded && p.cards && p.cards.some(c => c);
+    const tagHtml = idx===G.dealerIdx?'<span class="tag tag-d">D</span>':
+                    idx===sbIdx?'<span class="tag tag-sb">SB</span>':
+                    idx===bbIdx?'<span class="tag tag-bb">BB</span>':'';
+    const pColor = p.color || colorForName(p.name);
+    const borderStyle = isActive
+      ? `border:2.5px solid ${pColor};box-shadow:0 0 0 1px ${pColor}44`
+      : `border:1.5px solid ${pColor}55`;
+    return `<div class="opp-seat${p.folded?' folded':''}${isActive?' active':''}${p.allIn?' all-in':''}" style="${borderStyle}">
+      <div class="opp-name"><span class="p-dot" style="background:${pColor}"></span>${p.name}${tagHtml}</div>
+      <div class="opp-stack" style="display:flex;align-items:center;justify-content:center;gap:5px">${chipSvg(p.stack,20,p.name)}$${p.stack}</div>
+      ${p.bet>0?`<div class="opp-bet">bet $${p.bet}</div>`:'<div style="height:16px"></div>'}
+      <div class="opp-status">
+        ${p.folded?'<span style="color:#555;font-size:10px">folded</span>':
+          p.allIn?'<span style="color:var(--allin);font-size:10px">all-in</span>':
+          isActive?'<span style="color:var(--gold);font-size:10px">thinking…</span>':''}
+      </div>
+      <div class="opp-cards-row">
+        ${showCards && p.cards && p.cards.some(c=>c)
+          ? p.cards.map(c=>c?`<div style="width:22px;height:32px;border-radius:4px;background:white;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:${RED.has(c.suit)?'#c0392b':'#111'}">${c.rank}${c.suit}</div>`:'<div class="card-back-sm"></div>').join('')
+          : '<div class="card-back-sm"></div><div class="card-back-sm"></div>'}
+      </div>
+    </div>`;
+  }).join('');
+
+  // Community cards
+  const newCardIdxs = G.newCardIdxs || [];
+  const commHtml = Array(5).fill(null).map((_,i) => {
+    const c = G.community[i];
+    const isNew = newCardIdxs.includes(i);
+    const stagger = isNew ? (newCardIdxs.indexOf(i)*0.20)+'s' : '0s';
+    if (c) return `<div class="comm-card dealt${RED.has(c.suit)?' red':' blk'}${isNew?' dealing':''}" style="${isNew?`animation-delay:${stagger},${stagger}`:''}">
+      <div class="cr">${c.rank}</div><div class="cs">${c.suit}</div></div>`;
+    return `<div class="comm-card empty"></div>`;
+  }).join('');
+
+  // My hole cards
+  const myCardsHtml = me?.cards ? me.cards.map(c => {
+    if (!c) return '<div class="card-back-sm" style="width:70px;height:100px;border-radius:10px"></div>';
+    return `<div class="hole-card${cardsHidden?' flipped':''}">
+      <div class="cf ${RED.has(c.suit)?'red':'blk'}">
+        <div class="hr">${c.rank}</div><div class="hs">${c.suit}</div>
+      </div>
+      <div class="cb">🂠</div>
+    </div>`;
+  }).join('') : '';
+
+  // Deal progress
+  const stepHtml = DEAL_STEPS.map((_,i) => `<div class="deal-step${i<G.dealPhaseIdx?' done':i===G.dealPhaseIdx?' active':''}"></div>`).join('');
+
+  // Actions
+  let actionsHtml = '';
+  if (G.result) {
+    if (isHost) {
+      actionsHtml = `<button class="act a-deal" onclick="nextHand()" style="width:100%">Deal next hand →</button>`;
+    } else {
+      actionsHtml = `<p class="waiting-text">Waiting for host to deal next hand…</p>`;
+    }
+  } else if (G.hostWaitingToDeal) {
+    actionsHtml = `<div class="dealer-panel">
+      <h4>Betting round complete</h4>
+      <div class="deal-progress">${stepHtml}</div>
+      <p class="waiting-text">Dealing ${nextPhaseName}…</p>
+    </div>`;
+  } else if (me?.folded) {
+    actionsHtml = `<p class="waiting-text">You folded — watching this hand</p>`;
+  } else if (!isMyTurn) {
+    actionsHtml = `<p class="waiting-text">Waiting for ${G.players[G.currentTurn]?.name||'other player'}…</p>`;
+  } else if (L.showRaise) {
+    const minRaise = Math.max(maxBet*2, (G.BB||50)*2);
+    const maxR = me.stack + me.bet;
+    if (!L.raiseAmount || L.raiseAmount < minRaise) L.raiseAmount = minRaise;
+    actionsHtml = `<div class="raise-panel">
+      <label>Raise amount</label>
+      <div class="raise-amount" id="raise-disp">$${L.raiseAmount}</div>
+      <input type="range" min="${minRaise}" max="${maxR}" step="${G.BB||50}" value="${L.raiseAmount}"
+        oninput="L.raiseAmount=+this.value;document.getElementById('raise-disp').textContent='$'+L.raiseAmount">
+      <div class="actions-row">
+        <button class="act a-raise" onclick="doAction('raise')" style="flex:2">Raise to $${L.raiseAmount}</button>
+        <button class="act a-fold" onclick="L.showRaise=false;render()" style="flex:1">Cancel</button>
+      </div>
+    </div>`;
+  } else {
+    actionsHtml = `<div class="actions-row">
+      <button class="act a-fold" onclick="doAction('fold')">Fold</button>
+      ${toCall===0
+        ? `<button class="act a-check" onclick="doAction('check')">Check</button>`
+        : `<button class="act a-call" onclick="doAction('call')">Call $${Math.min(toCall,me.stack)}</button>`}
+      <button class="act a-raise" onclick="openRaise()">Raise…</button>
+      ${me.stack>0&&me.stack<=toCall?`<button class="act a-allin" onclick="doAction('allin')">All In</button>`:''}
+    </div>`;
+  }
+
+  // Result overlay
+  const resultHtml = G.result ? `<div class="overlay">
+    <div class="result-panel">
+      <div class="trophy">🏆</div>
+      <h2>${G.result.winner} wins</h2>
+      <div class="winner-name">${G.result.handName}</div>
+      <div class="win-amount">+$${G.result.amount}</div>
+      ${isHost
+        ? `<button class="btn-primary" onclick="nextHand()">Deal next hand</button>`
+        : `<p class="waiting-text" style="margin-top:.5rem">Waiting for host…</p>`}
+    </div>
+  </div>` : '';
+
+  const gameOverHtml = G.gameOver ? `<div class="overlay">
+    <div class="result-panel">
+      <div class="trophy">🏆</div>
+      <h2>Game over</h2>
+      <div class="winner-name">${G.gameOver.winner} wins it all</div>
+      <div class="win-amount">$${G.gameOver.amount}</div>
+      ${isHost
+        ? `<button class="btn-primary" onclick="playAgain()">Play again</button>
+           <button class="btn-secondary" onclick="exitToLobby()">Exit to lobby</button>`
+        : `<p class="waiting-text" style="margin-top:.5rem">Waiting for host…</p>`}
+    </div>
+  </div>` : '';
+
+  const lastLog = (G.log||[]).slice(-2).join(' · ');
+  const myTag = myIdx===G.dealerIdx?'<span class="tag tag-d">D</span>':
+                myIdx===sbIdx?'<span class="tag tag-sb">SB</span>':
+                myIdx===bbIdx?'<span class="tag tag-bb">BB</span>':'';
+
+  return `<div class="table-wrap">
+    <div class="topbar">
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="icon-btn" onclick="confirmExit()">← Exit</button>
+        <span class="phase-badge">${phaseLabel}</span>
+        ${isHost?'<span style="font-size:11px;color:var(--gold)">You deal</span>':''}
+        ${G.gameMode==='bots'?`<span class="phase-badge" style="text-transform:capitalize">${G.botDifficulty} bots</span>`:''}
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        ${G.pot>0?chipSvg(G.pot,26):''}
+        <div><span class="pot-label">Pot</span><span class="pot-display">$${G.pot}</span></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="room-label"><span id="conn-dot" class="conn-dot ${connected?'on':'off'}"></span>${L.roomCode}</span>
+        <button class="icon-btn" onclick="renderHandRankingsModal()">Hand Rankings</button>
+        <button class="icon-btn" onclick="renderRulesModal()">?</button>
+      </div>
+    </div>
+    <div class="table-area" style="position:relative">
+      ${showTableTalk?`<div id="chat-feed" class="move-feed" style="position:absolute;top:40px;right:0;width:220px;margin:0;z-index:50;background:#000;box-shadow:0 8px 28px rgba(0,0,0,.6)">
+        <div class="move-feed-title" style="display:flex;align-items:center;justify-content:space-between">
+          <span>Table Talk</span>
+          <span onclick="showTableTalk=false;render()" style="cursor:pointer;color:var(--text2);font-size:14px;padding:2px 4px">✕</span>
+        </div>
+        <div id="chat-list" class="move-feed-list" style="max-height:200px"></div>
+      </div>`:`<div onclick="showTableTalk=true;render()" style="position:absolute;top:40px;right:0;z-index:50;background:var(--surface);border:1px solid var(--border);border-radius:8px 0 0 8px;padding:10px 8px;cursor:pointer;color:var(--text2);font-size:14px;line-height:1">‹</div>`}
+      <div class="opponents-ring">${oppHtml}</div>
+      <div class="community-row">${commHtml}</div>
+      ${(G.log||[]).length?`<div class="action-log">${lastLog}</div>`:'<div class="action-log"></div>'}
+    </div>
+    <div class="my-section">
+      <div class="my-header">
+        <div>
+          <span class="my-name-text"><span class="p-dot" style="background:${colorForName(me?.name||'You')}"></span>${me?.name||'You'}${myTag}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          ${chipSvg(me?.stack||0,22,me?.name)}<span class="my-stack-text">$${me?.stack||0}</span>
+        </div>
+      </div>
+      ${me?.bet>0?`<div class="my-bet-info">Your current bet: $${me.bet}</div>`:''}
+      <div class="my-cards-row">
+        ${myCardsHtml}
+        <button class="icon-btn hide-cards-btn" onclick="toggleHide()">${cardsHidden?'👁<br>Show':'🙈<br>Hide'}</button>
+      </div>
+      <div class="flip-hint">Tap to hide your cards from nosy neighbors</div>
+      ${actionsHtml}
+    </div>
+    ${resultHtml}
+    ${gameOverHtml}
+  </div>`;
+}
+
+function updateChatFeed() {
+  const list = document.getElementById('chat-list');
+  if (!list || !G) return;
+  const names = (G.players||[]).map(p => p.name).sort((a,b) => b.length-a.length);
+  const nameColor = {};
+  for (const p of G.players) nameColor[p.name] = p.color || colorForName(p.name);
+  const recent = (G.log||[]).slice(-20).reverse();
+  const newCount = Math.max(0, (G.log||[]).length - _lastChatLen);
+  _lastChatLen = (G.log||[]).length;
+  list.innerHTML = '';
+  recent.forEach((entry,i) => {
+    let line = entry, isRed = false;
+    if (line.startsWith('__RED__')) { line = line.slice(7); isRed = true; }
+    else {
+      for (const n of names) {
+        line = line.replace(new RegExp('^'+n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')),
+          `<span class="mn" style="color:${nameColor[n]}">${n}</span>`);
+      }
+    }
+    const div = document.createElement('div');
+    div.className = 'move-line' + (i < newCount ? ' fresh' : '');
+    if (isRed) div.style.cssText = 'color:#e74c3c;font-weight:700;font-size:13px';
+    div.innerHTML = line;
+    list.appendChild(div);
+  });
+}
+
+// ════════════════════════════════════════════════
+// ACTIONS → EMIT TO SERVER
+// ════════════════════════════════════════════════
+function createRoom() {
+  const name = (document.getElementById('i-name')?.value||'').trim();
+  if (!name) { showToast('Please enter your name'); return; }
+  const blindsVal = document.getElementById('i-blinds')?.value || '25/50';
+  const [sb,bb] = blindsVal.split('/').map(Number);
+  const stack = +(document.getElementById('i-stack')?.value||1000);
+  const botCount = +(document.getElementById('i-botcount')?.value||4);
+  const botDiff = document.getElementById('i-botdiff')?.value || 'medium';
+  L.myName = name;
+  socket.emit('create_room', { name, SB: sb, BB: bb, startStack: stack, botDifficulty: botDiff, botCount, gameMode: L.gameMode });
+}
+
+function joinRoom() {
+  const name = (document.getElementById('i-name')?.value||'').trim();
+  const code = (document.getElementById('i-room')?.value||'').trim().toUpperCase();
+  if (!name) { showToast('Please enter your name'); return; }
+  if (!code) { showToast('Please enter a room code'); return; }
+  L.myName = name;
+  socket.emit('join_room', { name, roomCode: code });
+}
+
+function addBot() { socket.emit('add_bot', { roomCode: L.roomCode }); }
+
+function startGame() { socket.emit('start_game', { roomCode: L.roomCode }); }
+
+function doAction(action) {
+  L.showRaise = false;
+  socket.emit('action', { roomCode: L.roomCode, action, raiseAmount: L.raiseAmount });
+}
+
+function openRaise() {
+  const maxBet = G ? Math.max(...G.players.map(p => p.bet||0)) : 0;
+  L.raiseAmount = Math.max(maxBet*2, (G?.BB||50)*2);
+  L.showRaise = true;
+  render();
+}
+
+function nextHand() { socket.emit('next_hand', { roomCode: L.roomCode }); }
+function playAgain() { socket.emit('play_again', { roomCode: L.roomCode }); }
+function toggleHide() { cardsHidden = !cardsHidden; render(); }
+
+function exitToLobby() {
+  socket.emit('exit_lobby', { roomCode: L.roomCode });
+  G = null; roomPlayers = [];
+  L.screen = 'lobby'; L.roomCode = ''; L.isHost = false;
+  render();
+}
+
+function confirmExit() {
+  let existing = document.getElementById('exit-confirm');
+  if (existing) { existing.remove(); return; }
+  const div = document.createElement('div');
+  div.id = 'exit-confirm';
+  div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;z-index:500;backdrop-filter:blur(4px)';
+  div.innerHTML = `<div style="background:#141414;border:1px solid #3a3a3a;border-radius:16px;padding:2rem;text-align:center;max-width:300px;width:90%">
+    <div style="font-size:1.5rem;margin-bottom:.5rem">🚪</div>
+    <div style="font-size:1rem;font-weight:600;color:#f0f0f0;margin-bottom:.5rem">Leave the table?</div>
+    <div style="font-size:13px;color:#888;margin-bottom:1.5rem">Your seat will be given up.</div>
+    <button onclick="exitToLobby()" style="width:100%;background:#fff;color:#0a0a0a;border:none;border-radius:8px;padding:12px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:.5rem;font-family:inherit">Leave</button>
+    <button onclick="document.getElementById('exit-confirm').remove()" style="width:100%;background:transparent;color:#888;border:1px solid #2a2a2a;border-radius:8px;padding:11px;font-size:14px;cursor:pointer;font-family:inherit">Stay</button>
+  </div>`;
+  document.body.appendChild(div);
+}
+
+function copyCode() {
+  navigator.clipboard?.writeText(L.roomCode).catch(()=>{});
+  const el = document.querySelector('.room-code-box');
+  if (el) { const o=el.textContent; el.textContent='Copied!'; setTimeout(()=>{ el.textContent=o; },1200); }
+}
+
+// ── RULES MODAL ──
+function renderRulesModal() {
+  let existing = document.getElementById('rules-modal');
+  if (existing) { existing.remove(); return; }
+  const div = document.createElement('div');
+  div.id = 'rules-modal'; div.className = 'rules-overlay';
+  div.onclick = function(e) { if (e.target===div) div.remove(); };
+  div.innerHTML = `<div class="rules-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+      <h2>How to play</h2>
+      <button class="icon-btn" onclick="document.getElementById('rules-modal').remove()">✕ Close</button>
+    </div>
+    <div class="rs"><h3>The goal</h3>
+      <p>Win chips by making the best 5-card poker hand, or by getting everyone else to fold. You're dealt 2 private hole cards. Five community cards are dealt face-up on the table — you use <em>any combination</em> of your 2 hole cards and the 5 community cards to make your best hand.</p></div>
+    <div class="rs"><h3>Blinds & buy-ins</h3>
+      <p>Each hand starts with forced bets. The player left of the dealer posts the <strong style="color:#3498db">Small Blind (SB)</strong>, the next player posts the <strong style="color:var(--call)">Big Blind (BB)</strong>. Everyone starts with the buy-in amount set by the host. The dealer button <strong style="color:var(--gold)">(D)</strong> rotates left after each hand.</p></div>
+    <div class="rs"><h3>Betting rounds</h3>
+      <ul>
+        <li><strong style="color:var(--gold)">Pre-Flop</strong> — everyone is dealt 2 hole cards. Betting starts left of the big blind.</li>
+        <li><strong style="color:var(--gold)">Flop</strong> — 3 community cards are dealt. Betting restarts.</li>
+        <li><strong style="color:var(--gold)">Turn</strong> — 1 more card. Another betting round.</li>
+        <li><strong style="color:var(--gold)">River</strong> — final card. Last betting round, then showdown.</li>
+      </ul></div>
+    <div class="rs"><h3>Your actions</h3>
+      <ul>
+        <li><strong style="color:var(--fold)">Fold</strong> — give up your cards and exit the hand.</li>
+        <li><strong style="color:#3498db">Check</strong> — pass your turn (only when nobody has bet).</li>
+        <li><strong style="color:var(--call)">Call</strong> — match the current highest bet.</li>
+        <li><strong style="color:var(--raise)">Raise</strong> — increase the bet (minimum 2× current bet).</li>
+        <li><strong style="color:var(--allin)">All In</strong> — bet all your remaining chips.</li>
+      </ul></div>
+    <div class="rs"><h3>Showdown — hand rankings (best to worst)</h3>
+      <div class="hand-grid">
+        <div class="hand-item"><div class="rn">#1 best</div><div class="hn">Royal Flush</div><div class="hd">A K Q J 10 same suit</div></div>
+        <div class="hand-item"><div class="rn">#2</div><div class="hn">Straight Flush</div><div class="hd">5 in a row, same suit</div></div>
+        <div class="hand-item"><div class="rn">#3</div><div class="hn">Four of a Kind</div><div class="hd">4 cards of same rank</div></div>
+        <div class="hand-item"><div class="rn">#4</div><div class="hn">Full House</div><div class="hd">Three of a kind + a pair</div></div>
+        <div class="hand-item"><div class="rn">#5</div><div class="hn">Flush</div><div class="hd">Any 5 cards, same suit</div></div>
+        <div class="hand-item"><div class="rn">#6</div><div class="hn">Straight</div><div class="hd">5 cards in a row</div></div>
+        <div class="hand-item"><div class="rn">#7</div><div class="hn">Three of a Kind</div><div class="hd">3 cards of same rank</div></div>
+        <div class="hand-item"><div class="rn">#8</div><div class="hn">Two Pair</div><div class="hd">Two different pairs</div></div>
+        <div class="hand-item"><div class="rn">#9</div><div class="hn">One Pair</div><div class="hd">2 cards of same rank</div></div>
+        <div class="hand-item"><div class="rn">#10 worst</div><div class="hn">High Card</div><div class="hd">Highest single card wins</div></div>
+      </div></div>
+    <div class="rs"><h3>Privacy — hide your cards</h3>
+      <p>Tap <strong>🙈 Hide</strong> to flip your hole cards face-down so neighbors can't peek. Tap <strong>👁 Show</strong> to reveal them for yourself.</p></div>
+    <button class="btn-primary" onclick="document.getElementById('rules-modal').remove()" style="margin-top:.25rem">Got it, let's play</button>
+  </div>`;
+  document.body.appendChild(div);
+}
+
+// ── HAND RANKINGS MODAL ──
+function renderHandRankingsModal() {
+  let existing = document.getElementById('rank-modal');
+  if (existing) { existing.remove(); return; }
+  const div = document.createElement('div');
+  div.id = 'rank-modal'; div.className = 'rules-overlay';
+  div.onclick = function(e) { if (e.target===div) div.remove(); };
+  const rowsHtml = HAND_RANKINGS.map(h => {
+    const dimFrom = h.cards[5]===true?5:99;
+    const cardsHtml = h.cards.slice(0,5).map(([r,s],i) => {
+      const red = (s==='♥'||s==='♦'); const dim = i>=dimFrom;
+      return `<div class="rank-card${dim?' dim':red?' red':' blk'}"><div class="rc-r">${r}</div><div class="rc-s">${s}</div></div>`;
+    }).join('');
+    return `<div class="rank-row">
+      <div class="rank-chip">${h.n}</div>
+      <div class="rank-cards">${cardsHtml}</div>
+      <div class="rank-info"><h4>${h.name}</h4><p>${h.desc}</p></div>
+    </div>`;
+  }).join('');
+  div.innerHTML = `<div class="rules-panel">
+    <div style="display:flex;justify-content:flex-end;margin-bottom:.25rem">
+      <button class="icon-btn" onclick="document.getElementById('rank-modal').remove()">✕ Close</button>
+    </div>
+    <div class="rank-title-row">
+      <div class="rank-title"><b>POKER</b> HAND RANKINGS</div>
+      <div class="rank-title-divider"><span class="line"></span><span class="suits">♥ ♠ ♦ ♣</span><span class="line"></span></div>
+    </div>
+    ${rowsHtml}
+    <div class="rank-footer">Best hand (top) to worst hand (bottom)</div>
+  </div>`;
+  document.body.appendChild(div);
+}
+
+// Boot
+render();
+</script>
+</body>
+</html>
